@@ -1,0 +1,19 @@
+﻿using melodia.Entities;
+using melodia_api.Models.Song;
+
+namespace melodia_api.Models.Album
+{
+    public class AlbumViewDto
+    {
+        public long Id { get; set; }
+        public string CoverImage { get; set; }
+        public string Title { get; set; }
+        public string Description { get; set; }
+        public bool Active { get; set; } = true;
+        public DateTime ReleaseDate { get; set; }
+        public TimeSpan TotalDuration { get; set; }
+        public string AlbumTypeName { get; set; }
+        public List<string> ArtistNames { get; set; }
+        public List<SongViewDto> Songs { get; set; }
+    }
+}

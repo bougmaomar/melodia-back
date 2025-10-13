@@ -1,0 +1,25 @@
+# Ignore Visual Studio temporary files, build results, and
+# including folder directories
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.userprefs
+*.csproj.user
+*.sln.docstates
+
+# Ignore NuGet Packages
+packages/
+Dependencies/
+bin/
+obj/
+*.nupkg
+
+bin/Debug/net7.0/runtimes/win-x64/native/libcef.dll
+bin/Debug/net7.0/runtimes/win-x86/native/libcef.dll
+
+
+/uploads/audio/
+/uploads/images/
