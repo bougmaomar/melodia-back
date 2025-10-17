@@ -19,13 +19,26 @@ using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+// Add controllers
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+    });
 
+// Database configuration
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 builder.Services.AddDbContext<MelodiaDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseSqlServer(connectionString, sqlOptions =>
+    {
+        sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(30),
+            errorNumbersToAdd: null);
+    }));
 
+// Qdrant configuration
 builder.Services.Configure<QdrantSettings>(
     builder.Configuration.GetSection("Qdrant"));
 
@@ -39,18 +52,26 @@ builder.Services.AddSingleton<IQdrantRestClient>(sp =>
     );
 });
 
-
-
+// Django configuration
 builder.Services.Configure<DjangoSetting>(
     builder.Configuration.GetSection("Django"));
 
+// Kestrel configuration for large file uploads
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = 100_000_000; // 100 Mo
+    options.Limits.MaxRequestBodySize = 100_000_000; // 100 MB
 });
 
-builder.Services.AddSignalR();
+// SignalR
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = true;
+});
+
+// AutoMapper
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
+
+// Repository registrations
 builder.Services.AddScoped<ICityRepository, CityRepository>();
 builder.Services.AddScoped<ICountryRepository, CountryRepository>();
 builder.Services.AddScoped<IArtistAccountRepository, ArtistAccountRepository>();
@@ -65,10 +86,10 @@ builder.Services.AddScoped<IRoleRepository, RoleRepository>();
 builder.Services.AddScoped<IStationTypeRepository, StationTypeRepository>();
 builder.Services.AddScoped<IAudioFeatureExtractor, AudioFeatureExtractor>();
 builder.Services.AddScoped<ISongRepository, SongRepository>();
-builder.Services.AddScoped<IWriterRepository,  WriterRepository>();
-builder.Services.AddScoped<IComposerRepository,  ComposerRepository>();
-builder.Services.AddScoped<ICROwnerRepository,  IcrOwnerRepository>();
-builder.Services.AddScoped<IPOwnerRepository,  POwnerRepository>();
+builder.Services.AddScoped<IWriterRepository, WriterRepository>();
+builder.Services.AddScoped<IComposerRepository, ComposerRepository>();
+builder.Services.AddScoped<ICROwnerRepository, IcrOwnerRepository>();
+builder.Services.AddScoped<IPOwnerRepository, POwnerRepository>();
 builder.Services.AddScoped<IAlbumRepository, AlbumRepository>();
 builder.Services.AddScoped<IStationAccountRepository, StationAccountRepository>();
 builder.Services.AddScoped<ISongComposerRepository, SongComposerRepository>();
@@ -81,21 +102,31 @@ builder.Services.AddScoped<IProgramTypeRepository, ProgramTypeRepository>();
 builder.Services.AddScoped<IProgramRepository, ProgramRepository>();
 builder.Services.AddScoped<IChatRepository, ChatRepository>();
 builder.Services.AddScoped<SongProposalRepository>();
+
+// HTTP clients
 builder.Services.AddHttpClient<GeoDataService>();
 builder.Services.AddScoped<GeoDataService>();
 builder.Services.AddHttpClient<ISongRepository, SongRepository>();
+
+// Logging
 builder.Services.AddLogging();
 
+// CORS configuration - Azure friendly
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowOrigin", builder =>
+    options.AddPolicy("AllowOrigin", policy =>
     {
-        builder.AllowAnyOrigin()
+        var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
+            ?? new[] { "http://localhost:3000", "http://localhost:4200" };
+
+        policy.WithOrigins(allowedOrigins)
+            .AllowAnyMethod()
             .AllowAnyHeader()
-            .AllowAnyMethod();
-        // Note: Can't use .AllowCredentials() with AllowAnyOrigin()
+            .AllowCredentials();
     });
 });
+
+// Identity configuration
 builder.Services
     .AddIdentity<Account, Role>(options =>
     {
@@ -111,6 +142,7 @@ builder.Services
     .AddEntityFrameworkStores<MelodiaDbContext>()
     .AddDefaultTokenProviders();
 
+// JWT Authentication
 builder.Services
     .AddAuthentication(options =>
     {
@@ -137,69 +169,118 @@ builder.Services
         };
     });
 
-builder.Services.AddControllersWithViews().AddJsonOptions(options =>
-{
-    options.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.Preserve;
-});
-
+// Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
+// Database seeding (non-blocking)
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
+
     try
     {
-        MelodiaDbInitializer.Seed(services);
+        logger.LogInformation("Attempting database connection...");
 
-        var geoDataService = services.GetRequiredService<GeoDataService>();
-        await geoDataService.ImportGeographicalData();
+        var dbContext = services.GetRequiredService<MelodiaDbContext>();
+
+        // Test connection without crashing the app
+        if (await dbContext.Database.CanConnectAsync())
+        {
+            logger.LogInformation("Database connected successfully");
+
+            // Uncomment if you want to run migrations automatically
+            // await dbContext.Database.MigrateAsync();
+
+            MelodiaDbInitializer.Seed(services);
+            logger.LogInformation("Database seeding completed");
+
+            var geoDataService = services.GetRequiredService<GeoDataService>();
+            await geoDataService.ImportGeographicalData();
+            logger.LogInformation("Geographical data import completed");
+        }
+        else
+        {
+            logger.LogWarning("Cannot connect to database - skipping initialization");
+        }
     }
     catch (Exception ex)
     {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred seeding the database");
+        logger.LogError(ex, "An error occurred during database initialization: {Message}", ex.Message);
+        // Don't throw - let the app start even if seeding fails
     }
 }
 
+// Development environment configuration
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
     app.UseDeveloperExceptionPage();
 }
+
+// CORS must come first
 app.UseCors("AllowOrigin");
 
+// Default static files (wwwroot)
+app.UseStaticFiles();
+
+// Configure upload directories safely
+var uploadsBasePath = Path.Combine(app.Environment.ContentRootPath, "uploads");
+
+try
+{
+    var imagesPath = Path.Combine(uploadsBasePath, "images");
+    var audioPath = Path.Combine(uploadsBasePath, "audio");
+
+    // Create directories if they don't exist
+    Directory.CreateDirectory(imagesPath);
+    Directory.CreateDirectory(audioPath);
+
+    // Configure static file serving for uploads
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(imagesPath),
+        RequestPath = "/images"
+    });
+
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(audioPath),
+        RequestPath = "/audio"
+    });
+
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("Upload directories configured successfully at {Path}", uploadsBasePath);
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogError(ex, "Failed to configure upload directories. File uploads may not work.");
+}
+
+// HTTPS redirection
+app.UseHttpsRedirection();
+
+// Routing
 app.UseRouting();
 
-app.UseEndpoints(endpoints =>
-{
-    endpoints.MapHub<ChatHub>("/chatHub");
-});
-
-
-
-
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = new PhysicalFileProvider(
-        Path.Combine(app.Environment.ContentRootPath, "uploads/images")),
-    RequestPath = "/images"
-});
-
-app.UseStaticFiles(new StaticFileOptions
-{
-    FileProvider = new PhysicalFileProvider(
-        Path.Combine(app.Environment.ContentRootPath, "uploads/audio")),
-    RequestPath = "/audio"
-});
-
-
-app.UseHttpsRedirection();
+// Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseStaticFiles();
+
+// Map endpoints
 app.MapControllers();
+app.MapHub<ChatHub>("/chatHub");
+
+// Health check endpoint
+app.MapGet("/health", () => Results.Ok(new
+{
+    status = "healthy",
+    timestamp = DateTime.UtcNow
+}));
+
 app.Run();
