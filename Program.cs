@@ -90,9 +90,10 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowOrigin", builder =>
     {
-        builder.WithOrigins("*") // Allow multiple origins
+        builder.AllowAnyOrigin()
             .AllowAnyHeader()
             .AllowAnyMethod();
+        // Note: Can't use .AllowCredentials() with AllowAnyOrigin()
     });
 });
 builder.Services
