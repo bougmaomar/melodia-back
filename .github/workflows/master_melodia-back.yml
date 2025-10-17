@@ -1,61 +1,57 @@
 name: Build and deploy ASP.NET Core app to Azure Web App - melodia-back
-
 on:
   push:
     branches:
       - master
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: windows-latest
     permissions:
       contents: read
-
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Set up .NET Core
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.x'
-
+      
       - name: Restore dependencies
         run: dotnet restore
-
+      
       - name: Build with dotnet
         run: dotnet build --configuration Release --no-restore
-
+      
       - name: Publish app
-        run: dotnet publish -c Release -o ./publish
-
+        run: dotnet publish -c Release -o ./publish --no-build
+      
       - name: Upload artifact for deployment
         uses: actions/upload-artifact@v4
         with:
           name: published-app
           path: ./publish
-
+          
   deploy:
     runs-on: windows-latest
     needs: build
     permissions:
       id-token: write
       contents: read
-
     steps:
       - name: Download artifact from build job
         uses: actions/download-artifact@v4
         with:
           name: published-app
           path: ./publish
-
+      
       - name: Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_74D2001121E141C6849A4538CDEA074B }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_AA62A5761B0A4EBBBDF1EA8EBA614234 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_5FA45ACCF6B94530AFBA409EF0896976 }}
-
+      
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
