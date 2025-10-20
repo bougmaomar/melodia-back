@@ -146,23 +146,6 @@ builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    try
-    {
-        MelodiaDbInitializer.Seed(services);
-
-        var geoDataService = services.GetRequiredService<GeoDataService>();
-        await geoDataService.ImportGeographicalData();
-    }
-    catch (Exception ex)
-    {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred seeding the database");
-    }
-}
-
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
