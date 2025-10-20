@@ -23,8 +23,13 @@ builder.Services.AddControllers();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 
+// Register the DbContext with MySQL
 builder.Services.AddDbContext<MelodiaDbContext>(options =>
-    options.UseSqlServer(connectionString));
+    options.UseMySql(
+        connectionString,
+        ServerVersion.AutoDetect(connectionString) // Automatically detects MySQL version
+    )
+);
 
 builder.Services.Configure<QdrantSettings>(
     builder.Configuration.GetSection("Qdrant"));
