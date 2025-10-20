@@ -21,15 +21,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-
-// Register the DbContext with MySQL
 builder.Services.AddDbContext<MelodiaDbContext>(options =>
-    options.UseMySql(
-        connectionString,
-        ServerVersion.AutoDetect(connectionString) // Automatically detects MySQL version
-    )
-);
+{
+    var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+    options.UseMySql(connectionString, new MySqlServerVersion(new Version()),
+        mySqlOptions => { mySqlOptions.EnableRetryOnFailure(); });
+});
 
 builder.Services.Configure<QdrantSettings>(
     builder.Configuration.GetSection("Qdrant"));
