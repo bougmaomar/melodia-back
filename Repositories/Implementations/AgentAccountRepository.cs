@@ -100,12 +100,14 @@ namespace melodia_api.Repositories.Implementations
 
 
 
-        public async Task<Agent> CreateAgentAndAccount(AgentAccountCreateDto accountCreateDto)
-        {
+       public async Task<Agent> CreateAgentAndAccount(AgentAccountCreateDto accountCreateDto)
+       {
             try
             {
                 Agent agent = null;
+        
                 var strategy = _db.Database.CreateExecutionStrategy();
+        
                 await strategy.ExecuteAsync(async () =>
                 {
                     using (var transaction = _db.Database.BeginTransaction())
@@ -123,13 +125,12 @@ namespace melodia_api.Repositories.Implementations
                             Status = "ToAccept",
                             Active = true
                         };
-        
+                        
                         _db.Agents.Add(agent);
                         await _db.SaveChangesAsync();
         
                         var account = new Account
                         {
-                            Id = Guid.NewGuid().ToString(), // ADD THIS LINE
                             UserName = accountCreateDto.UserName,
                             Email = accountCreateDto.Email,
                             PhoneNumber = accountCreateDto.PhoneNumber,
@@ -139,8 +140,7 @@ namespace melodia_api.Repositories.Implementations
                         };
         
                         var accountCreateResult = await _userManager.CreateAsync(account, accountCreateDto.Password);
-                        if (!accountCreateResult.Succeeded)
-                            throw new Exception(string.Join(", ", accountCreateResult.Errors.Select(x => x.Description)));
+                        if (!accountCreateResult.Succeeded) throw new Exception(string.Join(", ", accountCreateResult.Errors.Select(x => x.Description)));
         
                         var role = await _db.Roles.FirstOrDefaultAsync(r => r.Name == "Agent");
                         if (role == null)
@@ -154,15 +154,18 @@ namespace melodia_api.Repositories.Implementations
                         }
         
                         await _userManager.AddToRoleAsync(account, "Agent");
+        
                         await _db.SaveChangesAsync();
                         transaction.Commit();
                     }
                 });
+        
                 return agent;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "An error occurred while creating the agent account");
+        
                 throw;
             }
         }
